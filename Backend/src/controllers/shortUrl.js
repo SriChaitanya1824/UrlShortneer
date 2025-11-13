@@ -105,6 +105,20 @@ export const createUrl = async (req, res) => {
 export const getAllUrl = async (req, res) => {
   try {
     console.log("📋 Fetching all URLs...");
+    
+    // Check database connection
+    const dbState = urlModel.db.readyState;
+    console.log("🔍 Database connection state:", dbState === 1 ? 'Connected' : 'Disconnected');
+    
+    if (dbState !== 1) {
+      console.error("❌ Database is not connected!");
+      return res.status(503).json({ 
+        error: 'Database not connected',
+        message: 'Database connection is not available. Please check your MongoDB connection string.',
+        data: []
+      });
+    }
+    
     const shortUrls = await urlModel
       .find()
       .select('fullUrl shortUrl clicks createdAt updatedAt')
@@ -112,24 +126,23 @@ export const getAllUrl = async (req, res) => {
       .lean()
       .limit(100); // Limit to prevent large responses
 
-    if (shortUrls.length === 0) {
-      console.log("📭 No URLs found in database");
-      return res.status(404).json({ 
-        message: 'No URLs found',
-        data: []
-      });
-    }
+    console.log(`📊 Found ${shortUrls.length} URLs in database`);
 
-    console.log(`✅ Retrieved ${shortUrls.length} URLs from database`);
+    // Return empty array instead of 404 if no URLs found
     res.status(200).json({
       message: 'URLs retrieved successfully',
       data: shortUrls
     });
   } catch (error) {
     console.error('💥 Get all URLs error:', error);
+    console.error('🔍 Error stack:', error.stack);
+    console.error('🔍 Error name:', error.name);
+    console.error('🔍 Error message:', error.message);
+    
     res.status(500).json({ 
       error: 'Internal server error',
-      message: 'Failed to retrieve URLs'
+      message: error.message || 'Failed to retrieve URLs',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };

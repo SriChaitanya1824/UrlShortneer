@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import connectDb from "./config/dbConfig.js";
 import { performanceMonitor, logMemoryUsage } from "./utils/performance.js";
 import shortUrl from "./routes/shortUrl.js";
+import { getUrl } from "./controllers/shortUrl.js";
 
 // ES module __dirname equivalent
 const __filename = fileURLToPath(import.meta.url);
@@ -20,8 +21,11 @@ console.log("🚀 Starting TinyLinker Server...");
 console.log("📋 Environment:", process.env.NODE_ENV || 'development');
 console.log("🌐 Port:", process.env.PORT || 5001);
 
-// Initialize database connection
-connectDb();
+// Initialize database connection (non-blocking)
+// Server will start even if database connection fails or is delayed
+connectDb().catch(err => {
+  console.error("⚠️  Database connection error (non-fatal):", err.message);
+});
 
 const port = process.env.PORT || 5001;
 
@@ -48,8 +52,29 @@ console.log("📊 Setting up performance monitoring...");
 // Performance monitoring
 app.use(performanceMonitor);
 
+console.log("🌐 Setting up CORS configuration...");
+// CORS configuration - MUST be before rate limiting to allow preflight requests
+app.use(
+  cors({
+    origin: process.env.NODE_ENV === 'production' 
+      ? ['https://tinylinker-cahw.onrender.com']
+      : [
+          "http://localhost:3000", 
+          "http://localhost:5173",
+          "http://localhost:5001",
+          "https://tinylinker-cahw.onrender.com"
+        ],
+    credentials: true,
+    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
+  })
+);
+console.log("✅ CORS configured for same-origin requests");
+
 console.log("🚦 Setting up rate limiting...");
-// Rate limiting
+// Rate limiting - applied after CORS
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 requests per windowMs
@@ -58,36 +83,11 @@ const limiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-});
-
-const createUrlLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // limit each IP to 20 URL creation requests per windowMs
-  message: {
-    error: 'Too many URL creation requests, please try again later.',
-  },
+  skip: (req) => req.method === 'OPTIONS', // Skip rate limiting for preflight requests
 });
 
 app.use(limiter);
-console.log("✅ Rate limiting configured: 100 requests/15min, 20 URL creations/15min");
-
-console.log("🌐 Setting up CORS configuration...");
-// CORS configuration - simplified for same-origin requests
-app.use(
-  cors({
-    origin: process.env.NODE_ENV === 'production' 
-      ? ['https://tinylinker-cahw.onrender.com']
-      : [
-          "http://localhost:3000", 
-          "http://localhost:5173",
-          "https://tinylinker-cahw.onrender.com"
-        ],
-    credentials: true,
-    methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  })
-);
-console.log("✅ CORS configured for same-origin requests");
+console.log("✅ Rate limiting configured: 100 requests/15min (URL creation has separate limit)");
 
 console.log("📝 Setting up body parsing middleware...");
 // Body parsing middleware
@@ -107,10 +107,15 @@ app.get('/health-check', (req, res) => {
 });
 
 console.log("🛣️ Setting up API routes...");
-// API routes with rate limiting for URL creation
+// API routes
 app.use("/api/", shortUrl);
-app.use("/api/shorturl", createUrlLimiter);
 console.log("✅ API routes configured: /api/shorturl, /api/shortUrl");
+
+console.log("🔗 Setting up short URL redirect route...");
+// Short URL redirect route (must be before static file serving)
+// This handles /shortUrl/:id redirects to the original URL
+app.get("/shortUrl/:id", getUrl);
+console.log("✅ Short URL redirect route configured: /shortUrl/:id");
 
 // Serve static files from the React app build directory
 if (process.env.NODE_ENV === 'production') {
