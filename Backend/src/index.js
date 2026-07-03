@@ -15,7 +15,10 @@ import { getUrl } from "./controllers/shortUrl.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-dotenv.config();
+// npm runs the backend with Backend/ as its working directory, while this
+// project's .env file lives at the repository root. Resolve it from this file
+// so local configuration loads consistently regardless of the launch command.
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 console.log("🚀 Starting TinyLinker Server...");
 console.log("📋 Environment:", process.env.NODE_ENV || 'development');
