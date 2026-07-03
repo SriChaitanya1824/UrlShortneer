@@ -51,7 +51,7 @@ PORT=5008
 - **Security**: Rate limiting and input validation
 
 
-## 📝 License
+
 
 
 
